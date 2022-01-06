@@ -19,23 +19,31 @@ from torchvision import transforms
 from typing import Optional, Tuple
 from tqdm.auto import tqdm
 
-from inference_utils import VideoReader, VideoWriter, ImageSequenceReader, ImageSequenceWriter
+from inference_utils import (
+    VideoReader,
+    VideoWriter,
+    ImageSequenceReader,
+    ImageSequenceWriter,
+)
 
-def convert_video(model,
-                  input_source: str,
-                  input_resize: Optional[Tuple[int, int]] = None,
-                  downsample_ratio: Optional[float] = None,
-                  output_type: str = 'video',
-                  output_composition: Optional[str] = None,
-                  output_alpha: Optional[str] = None,
-                  output_foreground: Optional[str] = None,
-                  output_video_mbps: Optional[float] = None,
-                  seq_chunk: int = 1,
-                  num_workers: int = 0,
-                  progress: bool = True,
-                  device: Optional[str] = None,
-                  dtype: Optional[torch.dtype] = None):
-    
+
+def convert_video(
+    model,
+    input_source: str,
+    input_resize: Optional[Tuple[int, int]] = None,
+    downsample_ratio: Optional[float] = None,
+    output_type: str = "video",
+    output_composition: Optional[str] = None,
+    output_alpha: Optional[str] = None,
+    output_foreground: Optional[str] = None,
+    output_video_mbps: Optional[float] = None,
+    seq_chunk: int = 1,
+    num_workers: int = 0,
+    progress: bool = True,
+    device: Optional[str] = None,
+    dtype: Optional[torch.dtype] = None,
+):
+
     """
     Args:
         input_source:A video file, or an image sequence directory. Images must be sorted in accending order, support png and jpg.
@@ -54,20 +62,28 @@ def convert_video(model,
         device: Only need to manually provide if model is a TorchScript freezed model.
         dtype: Only need to manually provide if model is a TorchScript freezed model.
     """
-    
-    assert downsample_ratio is None or (downsample_ratio > 0 and downsample_ratio <= 1), 'Downsample ratio must be between 0 (exclusive) and 1 (inclusive).'
-    assert any([output_composition, output_alpha, output_foreground]), 'Must provide at least one output.'
-    assert output_type in ['video', 'png_sequence'], 'Only support "video" and "png_sequence" output modes.'
-    assert seq_chunk >= 1, 'Sequence chunk must be >= 1'
-    assert num_workers >= 0, 'Number of workers must be >= 0'
-    assert output_video_mbps == None or output_type == 'video', 'Mbps is not available for png_sequence output.'
-    
+
+    assert downsample_ratio is None or (
+        downsample_ratio > 0 and downsample_ratio <= 1
+    ), "Downsample ratio must be between 0 (exclusive) and 1 (inclusive)."
+    assert any(
+        [output_composition, output_alpha, output_foreground]
+    ), "Must provide at least one output."
+    assert output_type in [
+        "video",
+        "png_sequence",
+    ], 'Only support "video" and "png_sequence" output modes.'
+    assert seq_chunk >= 1, "Sequence chunk must be >= 1"
+    assert num_workers >= 0, "Number of workers must be >= 0"
+    assert (
+        output_video_mbps == None or output_type == "video"
+    ), "Mbps is not available for png_sequence output."
+
     # Initialize transform
     if input_resize is not None:
-        transform = transforms.Compose([
-            transforms.Resize(input_resize[::-1]),
-            transforms.ToTensor()
-        ])
+        transform = transforms.Compose(
+            [transforms.Resize(input_resize[::-1]), transforms.ToTensor()]
+        )
     else:
         transform = transforms.ToTensor()
 
@@ -76,34 +92,39 @@ def convert_video(model,
         source = VideoReader(input_source, transform)
     else:
         source = ImageSequenceReader(input_source, transform)
-    reader = DataLoader(source, batch_size=seq_chunk, pin_memory=True, num_workers=num_workers)
-    
+    reader = DataLoader(
+        source, batch_size=seq_chunk, pin_memory=True, num_workers=num_workers
+    )
+
     # Initialize writers
-    if output_type == 'video':
+    if output_type == "video":
         frame_rate = source.frame_rate if isinstance(source, VideoReader) else 30
         output_video_mbps = 1 if output_video_mbps is None else output_video_mbps
         if output_composition is not None:
             writer_com = VideoWriter(
                 path=output_composition,
                 frame_rate=frame_rate,
-                bit_rate=int(output_video_mbps * 1000000))
+                bit_rate=int(output_video_mbps * 1000000),
+            )
         if output_alpha is not None:
             writer_pha = VideoWriter(
                 path=output_alpha,
                 frame_rate=frame_rate,
-                bit_rate=int(output_video_mbps * 1000000))
+                bit_rate=int(output_video_mbps * 1000000),
+            )
         if output_foreground is not None:
             writer_fgr = VideoWriter(
                 path=output_foreground,
                 frame_rate=frame_rate,
-                bit_rate=int(output_video_mbps * 1000000))
+                bit_rate=int(output_video_mbps * 1000000),
+            )
     else:
         if output_composition is not None:
-            writer_com = ImageSequenceWriter(output_composition, 'png')
+            writer_com = ImageSequenceWriter(output_composition, "png")
         if output_alpha is not None:
-            writer_pha = VideoWriter(output_alpha, 'png')
+            writer_pha = VideoWriter(output_alpha, "png")
         if output_foreground is not None:
-            writer_fgr = VideoWriter(output_foreground, 'png')
+            writer_fgr = VideoWriter(output_foreground, "png")
 
     # Inference
     model = model.eval()
@@ -111,10 +132,14 @@ def convert_video(model,
         param = next(model.parameters())
         dtype = param.dtype
         device = param.device
-    
-    if (output_composition is not None) and (output_type == 'video'):
-        bgr = torch.tensor([120, 255, 155], device=device, dtype=dtype).div(255).view(1, 1, 3, 1, 1)
-    
+
+    if (output_composition is not None) and (output_type == "video"):
+        bgr = (
+            torch.tensor([120, 255, 155], device=device, dtype=dtype)
+            .div(255)
+            .view(1, 1, 3, 1, 1)
+        )
+
     try:
         with torch.no_grad():
             bar = tqdm(total=len(source), disable=not progress, dynamic_ncols=True)
@@ -124,7 +149,9 @@ def convert_video(model,
                 if downsample_ratio is None:
                     downsample_ratio = auto_downsample_ratio(*src.shape[2:])
 
-                src = src.to(device, dtype, non_blocking=True).unsqueeze(0) # [B, T, C, H, W]
+                src = src.to(device, dtype, non_blocking=True).unsqueeze(
+                    0
+                )  # [B, T, C, H, W]
                 fgr, pha, *rec = model(src, *rec, downsample_ratio)
 
                 if output_foreground is not None:
@@ -132,13 +159,13 @@ def convert_video(model,
                 if output_alpha is not None:
                     writer_pha.write(pha[0])
                 if output_composition is not None:
-                    if output_type == 'video':
+                    if output_type == "video":
                         com = fgr * pha + bgr * (1 - pha)
                     else:
                         fgr = fgr * pha.gt(0)
                         com = torch.cat([fgr, pha], dim=-3)
                     writer_com.write(com[0])
-                
+
                 bar.update(src.size(1))
 
     finally:
@@ -165,31 +192,38 @@ class Converter:
         self.model = torch.jit.script(self.model)
         self.model = torch.jit.freeze(self.model)
         self.device = device
-    
+
     def convert(self, *args, **kwargs):
-        convert_video(self.model, device=self.device, dtype=torch.float32, *args, **kwargs)
-    
-if __name__ == '__main__':
+        convert_video(
+            self.model, device=self.device, dtype=torch.float32, *args, **kwargs
+        )
+
+
+if __name__ == "__main__":
     import argparse
     from model import MattingNetwork
-    
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--variant', type=str, required=True, choices=['mobilenetv3', 'resnet50'])
-    parser.add_argument('--checkpoint', type=str, required=True)
-    parser.add_argument('--device', type=str, required=True)
-    parser.add_argument('--input-source', type=str, required=True)
-    parser.add_argument('--input-resize', type=int, default=None, nargs=2)
-    parser.add_argument('--downsample-ratio', type=float)
-    parser.add_argument('--output-composition', type=str)
-    parser.add_argument('--output-alpha', type=str)
-    parser.add_argument('--output-foreground', type=str)
-    parser.add_argument('--output-type', type=str, required=True, choices=['video', 'png_sequence'])
-    parser.add_argument('--output-video-mbps', type=int, default=1)
-    parser.add_argument('--seq-chunk', type=int, default=1)
-    parser.add_argument('--num-workers', type=int, default=0)
-    parser.add_argument('--disable-progress', action='store_true')
+    parser.add_argument(
+        "--variant", type=str, required=True, choices=["mobilenetv3", "resnet50"]
+    )
+    parser.add_argument("--checkpoint", type=str, required=True)
+    parser.add_argument("--device", type=str, required=True)
+    parser.add_argument("--input-source", type=str, required=True)
+    parser.add_argument("--input-resize", type=int, default=None, nargs=2)
+    parser.add_argument("--downsample-ratio", type=float)
+    parser.add_argument("--output-composition", type=str)
+    parser.add_argument("--output-alpha", type=str)
+    parser.add_argument("--output-foreground", type=str)
+    parser.add_argument(
+        "--output-type", type=str, required=True, choices=["video", "png_sequence"]
+    )
+    parser.add_argument("--output-video-mbps", type=int, default=1)
+    parser.add_argument("--seq-chunk", type=int, default=1)
+    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--disable-progress", action="store_true")
     args = parser.parse_args()
-    
+
     converter = Converter(args.variant, args.checkpoint, args.device)
     converter.convert(
         input_source=args.input_source,
@@ -202,7 +236,5 @@ if __name__ == '__main__':
         output_video_mbps=args.output_video_mbps,
         seq_chunk=args.seq_chunk,
         num_workers=args.num_workers,
-        progress=not args.disable_progress
+        progress=not args.disable_progress,
     )
-    
-    
